@@ -71,7 +71,7 @@ main(){
 		iptables_delete $arr $@
 		;;
 	    "clientsadd")
-		clientsadd $arr $@
+		client_add $arr $@
 		;;
 	     "clientsdelete")
 		client_delete $arr $@
