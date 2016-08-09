@@ -1,4 +1,5 @@
 #!/bin/bash
+VERSION="0.1"
 valid_ip()
 {
     local  ip=$1
@@ -39,13 +40,16 @@ valid_ip()
    return 
 } 
 valid_interface(){
-    local arr=$1
+    OLD_IFS="$IFS"                                                               
+    IFS=","                                                              
+    local arr=($1)                                                                         
+    IFS="$OLD_IFS"
     for i in ${arr[@]}                                                                                                  
     do                                                                                                                  
-        if [ -z "$(ifconfig $i 2>/dev/null)" ];then                                                                     
+	if [ -z "$(ifconfig $i 2>/dev/null)" ];then                                                                     
                 if [ $i = "start" ];then                                                                                
                     echo "The Interface shouldn't be empty!"                                                            
-                    exit                                                                                                
+                    exit 1                                                                                               
                 fi                                                                                                      
                     echo $(ifconfig $i 2>&1)                                                                            
                 exit 1                                                                                                  
@@ -54,9 +58,22 @@ valid_interface(){
     return  
 }
 iptables_init(){
-    local arr=$1
-    valid_interface $arr
+    valid_interface $1
     valid_ip $4
+    if [ ! -f "/tmp/portal.list" ]; then 
+	echo "====================
+Portal Status
+====================
+Version: $VERSION
+Starttime: $(date +%s)
+Managed interface: $1
+Server ip: $4
+==========" > "/tmp/portal.list"	
+    fi
+    OLD_IFS="$IFS"                                                                                                            
+    IFS=","                                                                                                                   
+    local arr=($1)                                                                                                                  
+    IFS="$OLD_IFS"
     iptables -t nat -N ndsOUT -w
     iptables -t mangle -N ndsOUT -w
     iptables -t mangle -N ndsINC -w
@@ -84,8 +101,12 @@ iptables_init(){
     iptables -t filter -A ndsAUT -j ACCEPT -w
 }
 iptables_delete(){
-    local arr=$1
-    valid_interface $arr
+    valid_interface $1
+    OLD_IFS="$IFS"                                                                                                            
+    IFS=","                                                                                                                   
+    local arr=($1)                                                                                                            
+    IFS="$OLD_IFS" 
+    rm -f /tmp/portal.list
     iptables -t nat -F ndsOUT -w
     iptables -t mangle -F ndsOUT -w
     iptables -t mangle -F ndsINC -w
@@ -105,16 +126,24 @@ iptables_delete(){
     iptables -t filter -X ndsNET -w
 }
 client_add(){
-	local arr=$1
+        OLD_IFS="$IFS"                                                                                                            
+        IFS=","                                                                                                                   
+        local arr=($1)                                                                                                            
+        IFS="$OLD_IFS" 
 	if [ $arr = "clientsadd" ];then
 	    echo "The ip shouldn't be empty!"
 	    exit 1
         fi
 	for i in ${arr[@]}
 	do
-		valid_ip $i 
+		valid_ip $i
+		if [ -n "$(iptables-save | grep -w "ndsOUT -s $i/32")" ];then        
+    		        echo "IP is in the iptables!"
+			continue	
+		fi 
 		arpmac=$(cat /proc/net/arp | grep -w "$i" | awk '{print $4}')
 		if [ -n "$arpmac" ];then
+	                sed -i '$a '$(date +%s)' '$arpmac' '$i'' /tmp/portal.list
 			iptables -t mangle -A ndsINC -d $i/32 -j MARK --set-xmark 0xa400/0xa400 -w
 			iptables -t mangle -A ndsINC -d $i/32 -j ACCEPT -w
 			iptables -t mangle -A ndsOUT -s $i/32 -m mac --mac-source $arpmac -j MARK --set-xmark 0xa400/0xa400 -w
@@ -124,7 +153,10 @@ client_add(){
 	done
 }
 client_delete(){
-	local arr=$1
+	OLD_IFS="$IFS"                                                                                                            
+        IFS=","                                                                                                                   
+        local arr=($1)                                                                                                            
+        IFS="$OLD_IFS" 
 	if [ $arr = "clientsdelete" ];then                                                                                       
             echo "The ip shouldn't be empty!"                                                                                 
             exit 1                                                                                                            
@@ -132,8 +164,13 @@ client_delete(){
 	for i in ${arr[@]}
 	do
 		valid_ip $i
+		if [ -z "$(iptables-save | grep -w "ndsOUT -s $i/32")" ];then                                                 
+                        echo "IP is not in the iptables!"                                                                                      
+                        continue                                                                                              
+                fi 
 		arpmac=$(cat /proc/net/arp | grep -w "$i" | awk '{print $4}')
 		if [ -n "$arpmac" ];then
+			sed -i '/'$arpmac'/d' /tmp/portal.list
 			iptables -t mangle -D ndsINC -d $i/32 -j MARK --set-xmark 0xa400/0xa400 -w
 			iptables -t mangle -D ndsINC -d $i/32 -j ACCEPT -w
 			iptables -t mangle -D ndsOUT -s $i/32 -m mac --mac-source $arpmac -j MARK --set-xmark 0xa400/0xa400 -w
@@ -143,22 +180,21 @@ client_delete(){
 	done
 }
 main(){
-	OLD_IFS="$IFS"                                                                     
-        IFS=","                                                                            
-        arr=($2)                                                                           
-        IFS="$OLD_IFS" 
 	case $1 in
 	    "start")
-		iptables_init $arr $@
+		iptables_init $2 $@
 		;;
 	    "stop")
-		iptables_delete $arr $@
+		iptables_delete $2 $@
 		;;
+	    #"status")
+	#	iptables_status $2 $@
+	#	;;
 	    "clientsadd")
-		client_add $arr $@
+		client_add $2 $@
 		;;
-	     "clientsdelete")
-		client_delete $arr $@
+	    "clientsdelete")
+		client_delete $2 $@
 		;;
 	      *)
 	 	echo "Wrong Cmd!"
