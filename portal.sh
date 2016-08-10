@@ -65,10 +65,13 @@ iptables_init(){
 Portal Status
 ====================
 Version: $VERSION
-Starttime: $(date +%s)
+Start time: $(date +%s)
 Managed interface: $1
 Server ip: $4
-==========" > "/tmp/portal.list"	
+++++++++++++++++++++" > "/tmp/portal.list"	
+    else
+        echo "Bash Portal had started!"
+        exit 1
     fi
     OLD_IFS="$IFS"                                                                                                            
     IFS=","                                                                                                                   
@@ -84,7 +87,7 @@ Server ip: $4
 	iptables -t nat -I PREROUTING 1 -i $i -j ndsOUT -w
 	iptables -t mangle -I PREROUTING 1 -i $i -j ndsOUT -w
 	iptables -t mangle -I POSTROUTING 1 -o $i -j ndsINC -w
-        iptables -t filter -I FORWARD 1 -i $i -j ndsNET -w
+    iptables -t filter -I FORWARD 1 -i $i -j ndsNET -w
      done
     iptables -t nat -A ndsOUT -m mark --mark 0x400/0x700 -j ACCEPT -w
     iptables -t nat -A ndsOUT -p tcp -m tcp --dport 53 -j ACCEPT -w
@@ -106,10 +109,15 @@ iptables_delete(){
     IFS=","                                                                                                                   
     local arr=($1)                                                                                                            
     IFS="$OLD_IFS" 
-    rm -f /tmp/portal.list
+    if [ ! -f "/tmp/portal.list" ]; then 
+	    echo "Bash Portal had stoped!"
+        exit 1
+    else
+        rm -f /tmp/portal.list
+    fi
     iptables -t nat -F ndsOUT -w
     iptables -t mangle -F ndsOUT -w
-    iptables -t mangle -F ndsINC -w
+    iptables -t mangle -F ndsINC -w 
     iptables -t filter -F ndsAUT -w
     iptables -t filter -F ndsNET -w
     for i in ${arr[@]}                                                               
@@ -124,6 +132,43 @@ iptables_delete(){
     iptables -t mangle -X ndsINC -w
     iptables -t filter -X ndsAUT -w
     iptables -t filter -X ndsNET -w
+}
+iptables_status(){
+local clientcount=-1
+while read line
+do
+    local words=$line
+    if [ -n "$(echo $words | sed -n '/Start time/p')" ];then
+        local nowtime=$(date +%s)
+        local begintime=${words#Start time: } 
+        let local rangetime=nowtime-begintime
+        echo ${line%:*}": $(date -d @$begintime)"
+        echo "Start duration: "$[$rangetime/86400]" Day "$[$rangetime%86400/3600]" Hour "$[$rangetime%3600/60]" Min "$[$rangetime%60]" Sec"
+    else
+        if [ "$line" = "++++++++++++++++++++" ];then
+            clientcount=0
+            echo "Total download: $(iptables -n -v -t mangle -L POSTROUTING | awk 'NR==3 {print $2}')"	
+            echo "Total upload: $(iptables -n -v -t mangle -L PREROUTING | awk 'NR==3 {print $2}')"	
+            echo "++++++++++++++++++++"
+        else
+            if [ $clientcount -ge 0 ];then
+                arr=($line)
+                begintime=${arr[0]}
+                let rangetime=nowtime-begintime
+                let clientcount++
+                echo " "
+                echo "Client: $clientcount"
+                echo "IP: ${arr[2]} MAC: ${arr[1]}"
+                echo "Added time: $(date -d @${arr[0]})"
+                echo "Added duration: "$[$rangetime/86400]" Day "$[$rangetime%86400/3600]" Hour "$[$rangetime%3600/60]" Min "$[$rangetime%60]" Sec"
+                echo "Download: $(iptables -n -v -t mangle -L ndsINC | grep -w "${arr[2]}" | awk 'NR==1 {print $2}')"
+                echo "Upload: $(iptables -n -v -t mangle -L ndsOUT | grep -w "${arr[2]}" | awk 'NR==1 {print $2}')"
+            else
+            echo $line
+            fi
+        fi
+    fi
+done < /tmp/portal.list
 }
 client_add(){
         OLD_IFS="$IFS"                                                                                                            
@@ -143,7 +188,7 @@ client_add(){
 		fi 
 		arpmac=$(cat /proc/net/arp | grep -w "$i" | awk '{print $4}')
 		if [ -n "$arpmac" ];then
-	                sed -i '$a '$(date +%s)' '$arpmac' '$i'' /tmp/portal.list
+	        sed -i '$a '$(date +%s)' '$arpmac' '$i'' /tmp/portal.list
 			iptables -t mangle -A ndsINC -d $i/32 -j MARK --set-xmark 0xa400/0xa400 -w
 			iptables -t mangle -A ndsINC -d $i/32 -j ACCEPT -w
 			iptables -t mangle -A ndsOUT -s $i/32 -m mac --mac-source $arpmac -j MARK --set-xmark 0xa400/0xa400 -w
@@ -165,9 +210,9 @@ client_delete(){
 	do
 		valid_ip $i
 		if [ -z "$(iptables-save | grep -w "ndsOUT -s $i/32")" ];then                                                 
-                        echo "IP is not in the iptables!"                                                                                      
-                        continue                                                                                              
-                fi 
+            echo "IP is not in the iptables!"                                                                                      
+            continue                                                                                              
+        fi 
 		arpmac=$(cat /proc/net/arp | grep -w "$i" | awk '{print $4}')
 		if [ -n "$arpmac" ];then
 			sed -i '/'$arpmac'/d' /tmp/portal.list
@@ -187,9 +232,9 @@ main(){
 	    "stop")
 		iptables_delete $2 $@
 		;;
-	    #"status")
-	#	iptables_status $2 $@
-	#	;;
+	    "status")
+		iptables_status $2 $@
+		;;
 	    "clientsadd")
 		client_add $2 $@
 		;;
