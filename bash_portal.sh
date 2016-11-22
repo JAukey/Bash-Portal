@@ -162,9 +162,11 @@ do
                 echo "IP: ${arr[2]} MAC: ${arr[1]}"
                 echo "Added time: $(date -d @${arr[0]})"
                 echo "Added duration: "$[$rangetime/86400]" Day "$[$rangetime%86400/3600]" Hour "$[$rangetime%3600/60]" Min "$[$rangetime%60]" Sec"
-                echo "Download: $($IPT -n -v -t mangle -L bspINC -w | grep -w "${arr[2]}" | awk 'NR==1 {print $2}')"
-                echo "Upload: $($IPT -n -v -t mangle -L bspOUT -w | grep -w "${arr[2]}" | awk 'NR==1 {print $2}')"
-            else
+                echo "Download: $(iptables -n -v -t mangle -L bspINC -w | grep -w "${arr[2]}" | awk 'NR==1 {print $2}')"
+                echo "Upload: $(iptables -n -v -t mangle -L bspOUT -w | grep -w "${arr[2]}" | awk 'NR==1 {print $2}')"
+                echo "DownloadPkts: $(iptables -n -v -t mangle -L bspINC -w | grep -w "${arr[2]}" | awk 'NR==1 {print $1}')"
+                echo "UploadPkts: $(iptables -n -v -t mangle -L bspOUT -w | grep -w "${arr[2]}" | awk 'NR==1 {print $1}')"
+	    else
             echo $line
             fi
         fi
